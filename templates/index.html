@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zugzwang Secure</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<style>
+        body { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #ffffff; 
+            color: #333333; 
+            padding: 20px; 
+            overflow: hidden;
+        }
+        
+        .game-container { 
+            position: relative; 
+            width: 400px; 
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #board { width: 400px; border: 2px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        
+        .settings-dropdown { 
+            position: absolute; 
+            top: -35px; 
+            right: 0; 
+            background: #333333;
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            padding: 8px;
+            font-size: 0.85em;
+            cursor: pointer;
+            outline: none;
+        }
+
+        #temp-message {
+            align-self: flex-end; 
+            font-size: 0.75em;
+            color: #555555;
+            text-align: right;
+            height: 1.2em;
+            margin-bottom: 2px;
+            font-weight: bold;
+        }
+
+        .rating-display { 
+            font-size: 0.85em; 
+            color: #777; 
+            margin-bottom: 10px; 
+            width: 100%; 
+            text-align: left; 
+        }
+        
+        #status-container { 
+            margin-top: 15px; 
+            padding: 5px; 
+            width: 100%; 
+            text-align: center; 
+            font-weight: bold; 
+            font-size: 1.1em;
+            min-height: 1.5em;
+        }
+        
+        .info { color: #333333; }
+        .success { color: #444444; }
+        .error { color: #c62828; }
+        .granted { color: #222222; font-size: 1.3em; text-transform: uppercase; letter-spacing: 1px; }
+        
+        button#skip-btn { 
+            margin-top: 10px; 
+            padding: 8px 20px; 
+            cursor: pointer; 
+            background: #333333;
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            font-size: 0.9em; 
+            font-weight: normal;
+            transition: background 0.2s;
+            align-self: flex-start;
+        }
+        
+        button#skip-btn:hover { background: #555555; }
+
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <select id="difficultySelect" class="settings-dropdown" onchange="handleDropdownChange()">
+            <option value="600">600 Elo</option>
+            <option value="800">800 Elo</option>
+            <option value="1000">1000 Elo</option>
+            <option value="1200">1200 Elo</option>
+            <option value="1400">1400 Elo</option>
+            <option value="1600" selected>1600 Elo</option>
+            <option value="1800">1800 Elo</option>
+            <option value="2000">2000 Elo</option>
+            <option value="2200">2200 Elo</option>
+            <option value="2400">2400 Elo</option>
+            <option value="2600">2600 Elo</option>
+            <option value="2800">2800 Elo</option>
+        </select>
+        
+        <div id="temp-message"></div>
+
+        <div class="rating-display" id="current-rating-view">Difficulty: ---</div>
+        
+        <div id="board"></div>
+        
+        <div id="status-container" class="info">...</div>
+        
+        <button id="skip-btn" onclick="handleNewPuzzleClick()">New Puzzle</button>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+<script>
+var board = null;
+var game = new Chess();
+var puzzleMoves = [];
+var statusEl = $('#status-container');
+var tempMsgEl = $('#temp-message');
+var sessionRating = "1600";
+
+$(document).ready(function() {
+    function initializePuzzle() {
+        if (window.pywebview && window.pywebview.api) {
+            window.pywebview.api.get_saved_rating().then(function(savedRating) {
+                sessionRating = savedRating;
+                $('#difficultySelect').val(sessionRating);
+                loadPuzzle(sessionRating);
+            });
+        } else {
+            setTimeout(initializePuzzle, 100);
+        }
+    }
+
+    window.addEventListener('pywebviewready', initializePuzzle);
+
+    setTimeout(initializePuzzle, 500);
+});
+
+function handleDropdownChange() {
+    const selectedValue = $('#difficultySelect').val();
+    if (window.pywebview && window.pywebview.api) { 
+        window.pywebview.api.save_rating(selectedValue); 
+    }
+    if (selectedValue !== sessionRating) {
+        tempMsgEl.text("Saved. Applied after restart.");
+        setTimeout(function() { tempMsgEl.text(""); }, 4000);
+    }
+}
+
+function handleNewPuzzleClick() { loadPuzzle(sessionRating); }
+
+function loadPuzzle(targetRating) {
+    const target = parseInt(targetRating);
+    const range = 100;
+    const min = target - range;
+    const max = target + range;
+    $.getJSON(`/get_puzzle?min=${min}&max=${max}`, function(data) {
+        if (!data) { 
+            updateStatus("Error: No puzzle found.", "error"); 
+            return; 
+        }
+        $('#current-rating-view').text(`Puzzle Rating: ${data.rating}`);
+        game.load(data.fen);
+        puzzleMoves = data.moves;
+        var userColor = (game.turn() === 'w') ? 'black' : 'white';
+        board = Chessboard('board', {
+            draggable: true,
+            position: data.fen,
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+            onDrop: onDrop,
+            orientation: userColor
+        });
+        updateStatus("Opponent is moving...", "info");
+        setTimeout(makeOpponentMove, 500);
+    });
+}
+
+function onDrop(source, target) {
+    if (source === target) return;
+
+    let moveData = {
+        from: source,
+        to: target,
+        promotion: 'q'
+    };
+
+    let legalMove = game.move(moveData);
+
+    if (legalMove === null) {
+
+        return 'snapback';
+    }
+
+    let moveAttempt = source + target;
+    
+    if (legalMove.flags.includes('p')) {
+        moveAttempt += 'q';
+    }
+
+    if (moveAttempt !== puzzleMoves[0]) {
+        updateStatus("Incorrect! Try again.", "error");
+        game.undo();
+        return 'snapback';
+    }
+
+    puzzleMoves.shift();
+    
+    if (puzzleMoves.length > 0) {
+        updateStatus("Correct!", "success");
+        setTimeout(makeOpponentMove, 600);
+    } else {
+        completePuzzle();
+    }
+}
+
+function makeOpponentMove() {
+    if (puzzleMoves.length === 0) return;
+    var nextMove = puzzleMoves.shift();
+    var moveData = {
+        from: nextMove.substring(0, 2),
+        to: nextMove.substring(2, 4),
+        promotion: nextMove.length === 5 ? nextMove[4] : 'q'
+    };
+    game.move(moveData);
+    board.position(game.fen());
+    if (puzzleMoves.length > 0) {
+        var turnText = (game.turn() === 'w') ? "White to move" : "Black to move";
+        updateStatus(turnText, "info");
+    } else { completePuzzle(); }
+}
+
+function updateStatus(msg, type) { 
+    statusEl.text(msg).removeClass('info success error granted').addClass(type); 
+}
+
+function completePuzzle() {
+    updateStatus("ACCESS GRANTED - UNLOCKED", "granted");
+    
+    setTimeout(function() {
+        if (window.pywebview && window.pywebview.api) { 
+            window.pywebview.api.unlock_system(); 
+        }
+    }, 100);
+}
+
+function startDrag() {
+    if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.move_window();
+    }
+}
+</script>
+</body>
+</html>
