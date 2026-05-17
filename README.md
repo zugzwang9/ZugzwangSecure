@@ -1,4 +1,4 @@
-# Zugzwang Security
+# ZugzwangSecure
 
 Lock access to specified applications until a chess puzzle is solved.
 
@@ -15,7 +15,12 @@ Lock access to specified applications until a chess puzzle is solved.
    ```bash
    python main.py
 
-### Enable on Startup (Windows)
+### Add database:
+   - This project requires a chess puzzle database named `puzzles.db` in the root folder.
+   - You can download the massive puzzle dataset from [Lichess Open Database](https://database.lichess.org/#puzzles).
+   - *Note: The Lichess file is downloaded as a compressed `.bz2` file containing a `.csv`. You will need to extract it and import the data into an SQLite database named `puzzles.db` before running the application.*
+
+#### Enable on Startup (Windows)
 
 1. Build the executable using PyInstaller.
 
